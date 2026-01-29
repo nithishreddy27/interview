@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LoopbackCapture")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7429c05b6ddbdcc268455a4f53738242b4baa445")]
 [assembly: System.Reflection.AssemblyProductAttribute("LoopbackCapture")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LoopbackCapture")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -1,20 +1,59 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="UTF-8" />
-    <title>Private Overlay</title>
-    <style>
-      body { font-family: Arial, sans-serif; padding: 16px; }
-      button { padding: 10px 12px; margin: 6px 0; width: 100%; }
-      .hint { margin-top: 10px; font-size: 12px; opacity: 0.7; }
-    </style>
-  </head>
-  <body>
-    <h3>Private Overlay</h3>
 
-    <button onclick="alert('Button 1 clicked')">Button 1</button>
-    <button onclick="alert('Button 2 clicked')">Button 2</button>
+<head>
+  <meta charset="utf-8" />
+  <title>Live Captions</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 16px 18px;
+      font-family: system-ui, Arial, sans-serif;
+      background: #0b0b0b;
+      color: white;
+    }
 
-    <div class="hint">Hotkey: Ctrl + Shift + H (toggle)</div>
-  </body>
+    #caption {
+      font-size: 18px;
+      line-height: 1.55;
+      font-weight: 500;
+      white-space: normal;
+      /* paragraph flow */
+      word-break: break-word;
+    }
+
+    .hint {
+      margin-top: 10px;
+      opacity: 0.7;
+      font-size: 12px;
+    }
+  </style>
+
+</head>
+
+<body>
+  <div id="box">
+    <div id="caption">Waiting for speech…</div>
+    <div class="hint">Toggle: Ctrl + Shift + H</div>
+  </div>
+
+
+  <script>
+    const captionEl = document.getElementById("caption");
+    const MAX_CHARS = 900;
+
+    window.captions.onCaption((text) => {
+      const t = (text || "").trim();
+      if (!t) return;
+
+      const current = captionEl.textContent === "Waiting for speech…" ? "" : (captionEl.textContent || "");
+      let next = current ? (current + " " + t) : t;
+
+      if (next.length > MAX_CHARS) next = next.slice(next.length - MAX_CHARS);
+      captionEl.textContent = next;
+    });
+  </script>
+
+</body>
+
 </html>

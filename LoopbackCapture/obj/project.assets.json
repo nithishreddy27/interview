@@ -370,11 +370,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\softwares\\LoopbackCapture\\LoopbackCapture.csproj",
+      "projectUniqueName": "D:\\softwares\\interview\\LoopbackCapture\\LoopbackCapture.csproj",
       "projectName": "LoopbackCapture",
-      "projectPath": "D:\\softwares\\LoopbackCapture\\LoopbackCapture.csproj",
+      "projectPath": "D:\\softwares\\interview\\LoopbackCapture\\LoopbackCapture.csproj",
       "packagesPath": "C:\\Users\\NithishReddy\\.nuget\\packages\\",
-      "outputPath": "D:\\softwares\\LoopbackCapture\\obj\\",
+      "outputPath": "D:\\softwares\\interview\\LoopbackCapture\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\NithishReddy\\AppData\\Roaming\\NuGet\\NuGet.Config"
