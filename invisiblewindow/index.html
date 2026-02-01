@@ -165,6 +165,19 @@
     <div class="pill">Toggle: Ctrl + Shift + H</div>
   </div>
 
+  <div class="row">
+    <button id="addShotBtn">Add Screenshot</button>
+    <button id="clearShotsBtn">Clear Shots</button>
+    <button id="askShotsBtn">Ask w/ Screens</button>
+    <div class="pill" id="shotsPill">Shots: 0</div>
+  </div>
+
+  <div class="draftBox">
+    <div class="label">Screenshots</div>
+    <div class="draftText" id="shotsList">—</div>
+  </div>
+
+
   <div class="draftBox">
     <div class="label">Current question (draft from captions)</div>
     <div class="draftText" id="currentDraft">Waiting for speech…</div>
@@ -199,6 +212,100 @@
 
     // Map blockId -> answer element
     const answerEls = new Map();
+
+
+
+    const addShotBtn = document.getElementById("addShotBtn");
+    const clearShotsBtn = document.getElementById("clearShotsBtn");
+    const askShotsBtn = document.getElementById("askShotsBtn");
+    const shotsPill = document.getElementById("shotsPill");
+    const shotsList = document.getElementById("shotsList");
+
+    // Store screenshots as data URLs: "data:image/png;base64,..."
+    const shots = [];
+
+    function renderShots() {
+      shotsPill.textContent = `Shots: ${shots.length}`;
+      shotsList.textContent = shots.length
+        ? shots.map((_, i) => `Screenshot ${i + 1}`).join(" • ")
+        : "—";
+
+      // enable ask only if we have at least 1 shot and not currently streaming
+      askShotsBtn.disabled = streaming || shots.length === 0;
+      addShotBtn.disabled = streaming;
+      clearShotsBtn.disabled = streaming || shots.length === 0;
+    }
+
+    async function pickAndCaptureOne() {
+      // Ask main for available sources (screens + windows)
+      const sources = await window.screenCap.getSources();
+
+      // simplest UX: pick the first screen; you can build a small picker UI later
+      // Better: show a modal list and let user choose.
+      const preferred =
+        sources.find(s => s.kind === "screen") ||
+        sources.find(s => s.kind === "window") ||
+        sources[0];
+
+      if (!preferred) throw new Error("No capture sources found");
+
+      // Capture one frame from the chosen source
+      // const dataUrl = await window.screenCap.captureFrame(preferred.id);
+      const res = await window.screenCap.captureFrame(preferred.id);
+      if (!res?.ok) throw new Error(res?.error || "capture failed");
+      return dataUrl;
+    }
+
+    addShotBtn.addEventListener("click", async () => {
+      try {
+        setStatus("capturing…");
+        const img = await pickAndCaptureOne();
+        shots.push(img);
+        setStatus("idle");
+        renderShots();
+      } catch (e) {
+        setStatus("error");
+        console.error(e);
+      }
+    });
+
+    clearShotsBtn.addEventListener("click", () => {
+      shots.length = 0;
+      renderShots();
+    });
+
+    askShotsBtn.addEventListener("click", async () => {
+      if (streaming || shots.length === 0) return;
+
+      // Use currentDraft if you want to add extra text context, else a fixed instruction
+      const text = (currentDraft || "").trim();
+
+      const questionText =
+        text ||
+        "Use the screenshots to solve the coding task. Return working code and a short flow explanation.";
+
+      const { blockId } = createQABlock(`[Screenshots] ${questionText}`);
+
+      streaming = true;
+      setStatus("streaming…");
+      setButtons();
+      renderShots();
+
+      const res = await window.llm.askWithImages({
+        blockId,
+        question: questionText,
+        images: shots, // array of data URLs
+      });
+
+      if (!res?.ok) {
+        streaming = false;
+        setStatus("error");
+        setButtons();
+        renderShots();
+        const aEl = answerEls.get(blockId);
+        if (aEl) aEl.textContent = `Answer: [ERROR] ${res?.error || "unknown error"}`;
+      }
+    });
 
     function setStatus(s) {
       statusPill.textContent = `Status: ${s}`;
@@ -425,6 +532,7 @@
     renderDrafts();
     setButtons();
     setStatus("idle");
+    renderShots();
   </script>
 
   <div class="hint">

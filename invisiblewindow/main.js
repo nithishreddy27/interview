@@ -562,7 +562,14 @@
 //   py = null;
 // }
 
-const { app, BrowserWindow, globalShortcut, ipcMain } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  ipcMain,
+  desktopCapturer,
+  screen,
+} = require("electron");
 
 const path = require("path");
 const { spawn } = require("child_process");
@@ -708,7 +715,25 @@ ipcMain.handle("llm:ask", async (_evt, payload) => {
         blockId,
         message: err?.message || String(err),
       });
-    } catch {}
+    } catch (err) {
+      // openai-node exposes useful fields
+      const status = err?.status;
+      const reqId =
+        err?.request_id ||
+        err?.headers?.["x-request-id"] ||
+        err?.response?.headers?.["x-request-id"];
+
+      console.error("OpenAI error:", {
+        status,
+        reqId,
+        name: err?.name,
+        message: err?.message,
+        error: err?.error, // sometimes present
+        type: err?.type, // sometimes present
+      });
+
+      throw err;
+    }
     activeStreams.delete(blockId);
   });
 
@@ -786,6 +811,189 @@ async function streamAnswerToRenderer(blockId, question) {
 
   win?.webContents?.send("llm:done", { blockId, answer: full.trim() });
 }
+
+// ipcMain.handle("cap:getSources", async () => {
+//   const sources = await desktopCapturer.getSources({
+//     types: ["screen", "window"],
+//     thumbnailSize: { width: 0, height: 0 }, // we don't need thumbnails here
+//     fetchWindowIcons: true,
+//   });
+
+//   // Return minimal metadata (don’t send thumbnails unless you need a picker UI)
+//   return sources.map((s) => ({
+//     id: s.id,
+//     name: s.name,
+//     kind: s.id.startsWith("screen:") ? "screen" : "window",
+//   }));
+// });
+
+ipcMain.handle("cap:getSources", async () => {
+  const primary = screen.getPrimaryDisplay();
+  const { width, height } = primary.size;
+
+  const sources = await desktopCapturer.getSources({
+    types: ["screen", "window"],
+    // small thumb is fine for listing; real capture happens in cap:captureFrame
+    thumbnailSize: { width: 320, height: 180 },
+    fetchWindowIcons: true,
+  });
+
+  return sources.map((s) => ({
+    id: s.id,
+    name: s.name,
+    kind: s.id.startsWith("screen:") ? "screen" : "window",
+  }));
+});
+
+async function captureOneFrameDataUrl(sourceId) {
+  // Hidden helper window (offscreen) for getUserMedia -> canvas -> dataURL
+  const capWin = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+
+  // Minimal HTML that captures one frame
+  const html = `
+    <html><body></body>
+    <script>
+      (async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              mandatory: {
+                chromeMediaSource: "desktop",
+                chromeMediaSourceId: ${JSON.stringify(sourceId)},
+              }
+            }
+          });
+
+          const video = document.createElement("video");
+          video.srcObject = stream;
+          video.muted = true;
+          await video.play();
+
+          // wait a beat for a real frame
+          await new Promise(r => setTimeout(r, 120));
+
+          const canvas = document.createElement("canvas");
+          canvas.width = video.videoWidth || 1920;
+          canvas.height = video.videoHeight || 1080;
+
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          // stop tracks
+          stream.getTracks().forEach(t => t.stop());
+
+          const dataUrl = canvas.toDataURL("image/png");
+          console.log("DATAURL_START");
+          console.log(dataUrl);
+          console.log("DATAURL_END");
+        } catch (e) {
+          console.log("ERROR_START");
+          console.log(String(e && e.message ? e.message : e));
+          console.log("ERROR_END");
+        } finally {
+          window.close();
+        }
+      })();
+    </script></html>
+  `;
+
+  let logs = "";
+  capWin.webContents.on("console-message", (_e, _level, message) => {
+    logs += message + "\n";
+  });
+
+  await capWin.loadURL(
+    "data:text/html;charset=utf-8," + encodeURIComponent(html),
+  );
+
+  // Wait for it to close
+  await new Promise((resolve) => capWin.once("closed", resolve));
+
+  // Parse logs
+  const start = logs.indexOf("DATAURL_START");
+  const end = logs.indexOf("DATAURL_END");
+  if (start !== -1 && end !== -1) {
+    const dataUrl = logs.slice(start, end).split("\n")[1]?.trim();
+    if (dataUrl?.startsWith("data:image/png;base64,")) return dataUrl;
+  }
+
+  const es = logs.indexOf("ERROR_START");
+  const ee = logs.indexOf("ERROR_END");
+  if (es !== -1 && ee !== -1) {
+    const errMsg = logs.slice(es, ee).split("\n")[1]?.trim();
+    throw new Error(errMsg || "Failed to capture screenshot");
+  }
+
+  throw new Error("Failed to capture screenshot");
+}
+
+ipcMain.handle("cap:captureFrame", async (_evt, { sourceId }) => {
+  if (!sourceId) return { ok: false, error: "Missing sourceId" };
+
+  // Keep it small. 1280x720 is usually enough for coding prompts.
+  const targetW = 1280;
+  const targetH = 720;
+
+  const sources = await desktopCapturer.getSources({
+    types: ["screen", "window"],
+    thumbnailSize: { width: targetW, height: targetH },
+    fetchWindowIcons: false,
+  });
+
+  const src = sources.find((s) => s.id === sourceId);
+  if (!src) return { ok: false, error: "Source not found" };
+
+  const img = src.thumbnail;
+  if (img.isEmpty())
+    return { ok: false, error: "Empty capture (protected window?)" };
+
+  // JPEG compress (huge win vs PNG)
+  const jpegBuf = img.toJPEG(75); // 0-100 quality
+  const dataUrl = `data:image/jpeg;base64,${jpegBuf.toString("base64")}`;
+
+  // optional: log size
+  console.log("capture bytes:", jpegBuf.length);
+
+  return { ok: true, dataUrl };
+});
+
+ipcMain.handle("llm:ask_images", async (_evt, payload) => {
+  const { blockId, question, images } = payload || {};
+  if (!blockId || !question || !String(question).trim()) {
+    return { ok: false, error: "Missing blockId/question" };
+  }
+  if (!Array.isArray(images) || images.length === 0) {
+    return { ok: false, error: "No images provided" };
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    return { ok: false, error: "OPENAI_API_KEY is not set" };
+  }
+
+  activeStreams.set(blockId, { cancelled: false });
+
+  streamAnswerToRendererWithImages(
+    blockId,
+    String(question).trim(),
+    images,
+  ).catch((err) => {
+    try {
+      win?.webContents?.send("llm:error", {
+        blockId,
+        message: err?.message || String(err),
+      });
+    } catch {}
+    activeStreams.delete(blockId);
+  });
+
+  return { ok: true };
+});
 
 // ------------ Pipeline ------------
 function startWhisperServer() {
@@ -891,4 +1099,79 @@ function stopAll() {
   py = null;
 
   activeStreams.clear();
+}
+
+async function streamAnswerToRendererWithImages(
+  blockId,
+  question,
+  imagesDataUrls,
+) {
+  const client = await getOpenAI();
+
+  const historyText = chatHistory
+    .slice(-MAX_HISTORY_TURNS)
+    .map((t, i) => `Q${i + 1}: ${t.q}\nA${i + 1}: ${t.a}`)
+    .join("\n\n");
+
+  const instruction = `
+${SYSTEM_CONTEXT.trim()}
+
+You will receive one or more screenshots of a coding problem or project description.
+
+Return:
+1) The best working solution code (complete, runnable).
+2) A short explanation of the flow (5-10 lines max).
+No extra commentary.
+`.trim();
+
+  // Build multimodal content:
+  // - input_text + multiple input_image entries in one request :contentReference[oaicite:2]{index=2}
+  const content = [
+    {
+      type: "input_text",
+      text:
+        instruction +
+        "\n\n" +
+        (historyText ? `Conversation so far:\n${historyText}\n\n` : "") +
+        `User question:\n${question}`,
+    },
+    ...imagesDataUrls.map((d) => ({
+      type: "input_image",
+      image_url: d, // data:image/png;base64,...
+    })),
+  ];
+
+  let full = "";
+
+  const stream = await client.responses.create({
+    model: "gpt-4o-mini",
+    input: [{ role: "user", content }],
+    stream: true,
+  });
+
+  try {
+    for await (const event of stream) {
+      const state = activeStreams.get(blockId);
+      if (!state || state.cancelled) break;
+
+      // Streaming event types :contentReference[oaicite:3]{index=3}
+      if (event.type === "response.output_text.delta") {
+        const delta = event.delta || "";
+        if (delta) {
+          full += delta;
+          win?.webContents?.send("llm:delta", { blockId, delta });
+        }
+      }
+      if (event.type === "response.completed") break;
+    }
+  } finally {
+    activeStreams.delete(blockId);
+  }
+
+  chatHistory.push({ q: `[screenshots] ${question}`, a: full.trim() });
+  if (chatHistory.length > MAX_HISTORY_TURNS) {
+    chatHistory.splice(0, chatHistory.length - MAX_HISTORY_TURNS);
+  }
+
+  win?.webContents?.send("llm:done", { blockId, answer: full.trim() });
 }
