@@ -1,5 +1,20 @@
+// const { contextBridge, ipcRenderer } = require("electron");
+
+// contextBridge.exposeInMainWorld("captions", {
+//   onCaption: (cb) => ipcRenderer.on("caption", (_e, text) => cb(text)),
+// });
+
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("captions", {
   onCaption: (cb) => ipcRenderer.on("caption", (_e, text) => cb(text)),
+});
+
+contextBridge.exposeInMainWorld("llm", {
+  ask: (payload) => ipcRenderer.invoke("llm:ask", payload),
+  cancel: (blockId) => ipcRenderer.invoke("llm:cancel", { blockId }),
+
+  onDelta: (cb) => ipcRenderer.on("llm:delta", (_e, data) => cb(data)),
+  onDone: (cb) => ipcRenderer.on("llm:done", (_e, data) => cb(data)),
+  onError: (cb) => ipcRenderer.on("llm:error", (_e, data) => cb(data)),
 });

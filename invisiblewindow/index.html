@@ -1,4 +1,4 @@
-<!doctype html>
+<!-- <!doctype html>
 <html>
 
 <head>
@@ -54,6 +54,382 @@
     });
   </script>
 
+</body>
+
+</html> -->
+
+
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>Live Captions + Q/A</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 16px 18px;
+      font-family: system-ui, Arial, sans-serif;
+      background: #0b0b0b;
+      color: white;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      /* cursor: pointer; */
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.06);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .pill {
+      font-size: 12px;
+      opacity: 0.8;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .draftBox {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .label {
+      font-size: 12px;
+      opacity: 0.75;
+      margin-bottom: 6px;
+    }
+
+    .draftText {
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: normal;
+      word-break: break-word;
+    }
+
+    .qa {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      padding: 12px 12px;
+      background: rgba(255, 255, 255, 0.02);
+      margin-bottom: 12px;
+    }
+
+    .q {
+      font-size: 14px;
+      line-height: 1.55;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .a {
+      font-size: 14px;
+      line-height: 1.55;
+      opacity: 0.95;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .hint {
+      margin-top: 10px;
+      opacity: 0.7;
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="row">
+    <button id="askBtn">Ask</button>
+    <button id="askNextBtn">Ask Next</button>
+    <div class="pill" id="statusPill">Status: idle</div>
+    <div class="pill">Toggle: Ctrl + Shift + H</div>
+  </div>
+
+  <div class="draftBox">
+    <div class="label">Current question (draft from captions)</div>
+    <div class="draftText" id="currentDraft">Waiting for speech…</div>
+  </div>
+
+  <div class="draftBox">
+    <div class="label">Next question (captions while streaming)</div>
+    <div class="draftText" id="nextDraft">—</div>
+  </div>
+
+  <div id="qaList"></div>
+
+  <script>
+    const askBtn = document.getElementById("askBtn");
+    const askNextBtn = document.getElementById("askNextBtn");
+    const statusPill = document.getElementById("statusPill");
+
+    const currentDraftEl = document.getElementById("currentDraft");
+    const nextDraftEl = document.getElementById("nextDraft");
+    const qaList = document.getElementById("qaList");
+
+    const MAX_CHARS = 1200;
+
+    let questionCount = 0;
+
+    // Buffers
+    let currentDraft = "";
+    let nextDraft = "";
+
+    // Streaming state
+    let streaming = false;
+
+    // Map blockId -> answer element
+    const answerEls = new Map();
+
+    function setStatus(s) {
+      statusPill.textContent = `Status: ${s}`;
+    }
+
+    function clamp(s) {
+      s = (s || "").trim();
+      if (s.length <= MAX_CHARS) return s;
+      return s.slice(s.length - MAX_CHARS);
+    }
+
+    function renderDrafts() {
+      currentDraftEl.textContent = currentDraft ? currentDraft : "Waiting for speech…";
+      nextDraftEl.textContent = nextDraft ? nextDraft : "—";
+    }
+
+    function appendToDraft(which, text) {
+      const t = (text || "").trim();
+      if (!t) return;
+
+      if (which === "current") {
+        currentDraft = clamp(currentDraft ? currentDraft + " " + t : t);
+      } else {
+        nextDraft = clamp(nextDraft ? nextDraft + " " + t : t);
+      }
+
+      renderDrafts();
+      setButtons(); // ✅ enable/disable buttons whenever draft changes
+    }
+
+
+    function clearAllDrafts({ clearQA = false } = {}) {
+      currentDraft = "";
+      nextDraft = "";
+
+      renderDrafts();
+      setStatus("idle");
+      setButtons();
+
+      if (clearQA) {
+        qaList.innerHTML = "";
+        answerEls.clear();
+        questionCount = 0;
+      }
+    }
+
+
+    // Captions come in continuously.
+    // If we are currently streaming an answer, new captions go to "nextDraft".
+    window.captions.onCaption((text) => {
+      appendToDraft(streaming ? "next" : "current", text);
+    });
+
+    function createQABlock(questionText) {
+      questionCount += 1;
+      const blockId = `q_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+      const wrap = document.createElement("div");
+      wrap.className = "qa";
+
+      const q = document.createElement("div");
+      q.className = "q";
+      q.textContent = `Question ${questionCount}: ${questionText}`;
+
+      const a = document.createElement("div");
+      a.className = "a";
+      a.textContent = "Answer: ";
+
+      wrap.appendChild(q);
+      wrap.appendChild(a);
+      qaList.prepend(wrap);
+
+      answerEls.set(blockId, a);
+      return { blockId, answerEl: a };
+    }
+
+    function setButtons() {
+      askBtn.disabled = streaming || !currentDraft.trim();
+      askNextBtn.disabled = streaming || !nextDraft.trim();
+    }
+
+    async function askWithText(questionText, consumeWhich) {
+      const { blockId } = createQABlock(questionText);
+
+      streaming = true;
+      setStatus("streaming…");
+      setButtons();
+
+      // Clear the consumed buffer immediately so new captions can accumulate
+      if (consumeWhich === "current") currentDraft = "";
+      if (consumeWhich === "next") nextDraft = "";
+      renderDrafts();
+
+      const res = window.llm.ask({ blockId, question: questionText, mode: consumeWhich });
+      if (!res?.ok) {
+        streaming = false;
+        setStatus("error");
+        setButtons();
+        const aEl = answerEls.get(blockId);
+        if (aEl) aEl.textContent = `Answer: [ERROR] ${res?.error || "unknown error"}`;
+      }
+    }
+
+    askBtn.addEventListener("click", async () => {
+      const q = currentDraft.trim();
+      if (!q || streaming) return;
+      await askWithText(q, "current");
+    });
+
+    askNextBtn.addEventListener("click", async () => {
+      const q = nextDraft.trim();
+      if (!q || streaming) return;
+
+      // When user clicks Ask Next, it becomes the next official question,
+      // and we continue collecting new captions into currentDraft afterwards.
+      await askWithText(q, "next");
+    });
+
+    // Receive streaming token deltas from main
+    window.llm.onDelta(({ blockId, delta }) => {
+      const el = answerEls.get(blockId);
+      if (!el) return;
+
+      // Keep "Answer: " prefix, append tokens
+      if (el.textContent === "Answer: ") {
+        el.textContent = "Answer: " + delta;
+      } else {
+        el.textContent += delta;
+      }
+    });
+
+    window.llm.onDone(({ blockId, answer }) => {
+      const el = answerEls.get(blockId);
+      if (el) el.textContent = `Answer: ${answer || ""}`;
+
+      streaming = false;
+      setStatus("idle");
+      setButtons();
+
+      // After finishing, we want to start drafting the next question from captions.
+      // If there is already text in nextDraft (captions happened during streaming),
+      // keep it as-is so user can click "Ask Next".
+      renderDrafts();
+    });
+
+    window.llm.onError(({ blockId, message }) => {
+      const el = answerEls.get(blockId);
+      if (el) el.textContent = `Answer: [ERROR] ${message || "unknown error"}`;
+
+      streaming = false;
+      setStatus("error");
+      setButtons();
+    });
+
+
+    // ---- Keyboard shortcuts ----
+    // Enter  -> Ask (currentDraft) if available, else Ask Next (nextDraft) if available
+    // Shift+Enter -> Ask Next (if available)
+    // Esc -> (optional) cancel current stream if you implement llm:cancel wiring
+
+    window.addEventListener("keydown", async (e) => {
+      // avoid interfering with typing in inputs/textareas (if you add them later)
+      const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : "";
+      if (tag === "input" || tag === "textarea") return;
+
+      // If you want Enter to work even when button is focused, prevent default click/submit behavior
+      const isEnter = (e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter");
+      if (!isEnter && e.key !== "Escape") return;
+
+      // Enter / Shift+Enter
+      if (isEnter) {
+        e.preventDefault();
+
+        if (streaming) return;
+
+        // Shift+Enter => Ask Next
+        if (e.shiftKey) {
+          const qNext = nextDraft.trim();
+          if (!qNext) return;
+          await askWithText(qNext, "next");
+          return;
+        }
+
+        // Plain Enter => Ask current if possible, else Ask Next
+        const qCur = currentDraft.trim();
+        if (qCur) {
+          await askWithText(qCur, "current");
+          return;
+        }
+
+        const qNext = nextDraft.trim();
+        if (qNext) {
+          await askWithText(qNext, "next");
+          return;
+        }
+      }
+
+      // Optional: Escape => cancel
+      if (e.key === "Escape") {
+        // If you want cancel, you need to store the "active" blockId in renderer
+        // and expose window.llm.cancel in preload.
+        // For now, do nothing.
+      }
+    });
+
+    window.addEventListener("keydown", (e) => {
+      const tag = (e.target && e.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+
+      // Ctrl + Shift + C => clear captions
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+
+        if (streaming) return; // safety: don't clear mid-stream
+
+        clearAllDrafts({
+          clearQA: false, // 🔁 change to true if you want to wipe Q/A history too
+        });
+      }
+    });
+
+
+    // init
+    renderDrafts();
+    setButtons();
+    setStatus("idle");
+  </script>
+
+  <div class="hint">
+    Tip: While an answer is streaming, any new captions automatically go into “Next question”.
+  </div>
 </body>
 
 </html>

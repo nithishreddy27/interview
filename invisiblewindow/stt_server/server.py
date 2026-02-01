@@ -5,7 +5,7 @@ import numpy as np
 import websockets
 from faster_whisper import WhisperModel
 
-MODEL_NAME = "base"          # try "small" on GPU for better accuracy
+MODEL_NAME = "small"          # try "small" on GPU for better accuracy
 DEVICE = "cuda"              # <<< GPU
 COMPUTE_TYPE = "float16"     # <<< GPU
 
@@ -19,10 +19,10 @@ BYTES_PER_SEC = SAMPLE_RATE * BYTES_PER_SAMPLE * CHANNELS  # 32000
 # TAIL_SEC = 0.35             # keep a bit of previous audio for context
 # MAX_CTX_SEC = 1.60          # do NOT exceed this much audio per decode
 
-STEP_SEC = 1.2      # was 0.50 (more latency)
+STEP_SEC = 1.5      # was 0.50 (more latency)
 TAIL_SEC = 0.4   # optional: more context
 MAX_CTX_SEC = 2.2   # optional: more context
-beam_size = 1
+beam_size = 5
 temperature = 0
 
 STEP_BYTES = int(BYTES_PER_SEC * STEP_SEC)       # 16000
@@ -87,9 +87,9 @@ async def handler(ws):
             segments, info = model.transcribe(
                 audio,
                 language="en",
-                vad_filter=True,
-                beam_size=1,
-                best_of=1,
+                vad_filter=False,
+                beam_size=5,
+                best_of=5,
                 temperature=0,
                 condition_on_previous_text=True,
                 without_timestamps=True,
