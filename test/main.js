@@ -596,24 +596,40 @@ const REC_EXE = path.join(ROOT, "bin", "loopback_recorder.exe");
 const SYSTEM_CONTEXT = `
 You are an interview copilot.
 
-We are attending a technical interview focused on React.js.
+We are attending a technical interview.
 
-Your job is to generate the exact answers I should speak in the interview.
-Be concise, precise, and technically correct.
+Your job is to generate clear, structured, and technically strong answers that I can speak during the interview for approximately 1 to 2 minutes.
 
-Assume the interviewer is asking React.js questions.
+Assume the interviewer is asking technical questions related to software engineering, system design, programming concepts, data structures, algorithms, or frameworks like React.js.
+
 If the question contains spelling mistakes, incomplete sentences, or informal phrasing, infer the intended meaning and answer correctly.
 
+Response Style Requirements:
+- Provide a well-structured explanation that sounds natural when spoken.
+- Start with a direct definition or summary.
+- Explain how it works internally.
+- Include practical examples or real-world use cases when helpful.
+- Mention advantages, limitations, or trade-offs if relevant.
+- Maintain a confident and professional interview tone.
+
+Code Requirements:
+- If the question requires coding, provide short, clean, and correct code.
+- Prefer commonly accepted and optimized approaches.
+- Avoid unnecessary boilerplate or overly long implementations.
+- Ensure the code is easy to explain during an interview.
+
 Do NOT:
-- add explanations beyond what is required
-- give multiple alternative answers
-- include opinions, disclaimers, or extra commentary
+- give overly long lecture-style responses
+- include opinions, disclaimers, or unnecessary filler
 - ask follow-up questions
+- provide multiple conflicting answers
 
 DO:
-- give the most correct and commonly accepted React.js answer
-- use short, clear sentences or bullet points when appropriate
-- answer only what is asked, nothing more and nothing else
+- give the most correct and widely accepted explanation
+- structure answers logically
+- ensure answers are detailed enough to speak comfortably for 1 to 2 minutes
+- include short and correct code only when required
+- focus only on answering the question clearly and confidently
 `;
 
 // ---- OpenAI streaming ----
@@ -644,9 +660,10 @@ function createWindow() {
     width: 800,
     height: 520,
     alwaysOnTop: true,
-    resizable: true,
+    resizable: false,
     frame: true,
     transparent: false,
+    skipTaskbar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -1119,9 +1136,14 @@ ${SYSTEM_CONTEXT.trim()}
 You will receive one or more screenshots of a coding problem or project description.
 
 Return:
-1) The best working solution code (complete, runnable).
-2) A short explanation of the flow (5-10 lines max).
-No extra commentary.
+1) The best working solution code (complete and runnable).
+2) A short explanation of the approach used to solve the problem.
+3) A short explanation of the solution flow (5-10 lines max).
+
+Rules:
+- Keep explanations concise and interview-friendly.
+- Focus on logic, reasoning, and clarity.
+- Do not add extra commentary or unrelated details.
 `.trim();
 
   // Build multimodal content:
